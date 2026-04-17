@@ -5,11 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "attach": "node attach.js"
+    "agent": "node agent.js"
   },
   "bin": {
     "term-hub": "./server.js",
-    "term-hub-attach": "./attach.js"
+    "term-hub-agent": "./agent.js"
   },
   "keywords": ["terminal", "tmux", "pty", "xterm", "web-terminal", "remote-terminal"],
   "author": "quake0day",

@@ -11,28 +11,21 @@
   html, body { margin: 0; height: 100%; background: #0b0d10; color: #d6d7d9; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
   #app { display: grid; grid-template-rows: 40px 1fr; height: 100vh; }
 
-  /* top bar: host tabs */
-  #hosts { display: flex; align-items: stretch; background: #0b0d10; border-bottom: 1px solid #1d2128; overflow-x: auto; }
-  .host { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-right: 1px solid #1d2128; cursor: pointer; color: #8892a0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: nowrap; }
-  .host:hover { background: #111418; color: #d6d7d9; }
-  .host.active { background: #111418; color: #fff; box-shadow: inset 0 -2px 0 #2f81f7; }
-  .host .dot { width: 8px; height: 8px; border-radius: 50%; background: #5b6473; }
-  .host.on .dot { background: #3fb950; }
-  .host.off .dot { background: #f85149; }
-  .host .count { color: #5b6473; font-size: 11px; }
-  .host .mode { color: #5b6473; font-size: 10px; padding: 2px 5px; border: 1px solid #1d2128; border-radius: 3px; }
-  #brand { display: flex; align-items: center; padding: 0 16px; color: #5b6473; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; border-right: 1px solid #1d2128; }
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: #0b0d10; border-bottom: 1px solid #1d2128; }
+  header .brand { display: flex; align-items: center; gap: 10px; color: #d6d7d9; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; letter-spacing: .14em; }
+  header .brand b { color: #fff; letter-spacing: 0; font-weight: 700; font-size: 13px; }
+  header .meta { color: #5b6473; font-size: 11px; font-family: ui-monospace, monospace; display: flex; gap: 14px; }
+  header .meta .ok { color: #3fb950; } header .meta .warn { color: #d29922; }
 
-  /* body: sidebar + main */
-  #body { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  #body { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
   aside { background: #111418; border-right: 1px solid #1d2128; display: flex; flex-direction: column; min-height: 0; }
-  .aside-h { padding: 10px 14px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #5b6473; border-bottom: 1px solid #1d2128; }
-  .new { margin: 8px; display: flex; gap: 6px; }
-  .new input { flex: 1; background: #0b0d10; border: 1px solid #1d2128; color: #d6d7d9; padding: 6px 8px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px; }
-  .new button { background: #2f81f7; border: 0; color: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; }
-  .new button:hover { background: #3b8ff8; }
+  .aside-h { padding: 10px 14px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #5b6473; border-bottom: 1px solid #1d2128; display: flex; justify-content: space-between; align-items: center; }
   #sessions { flex: 1; overflow: auto; padding: 4px 8px 8px; }
-  .sess { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #b8bec8; font-family: ui-monospace, monospace; font-size: 12px; }
+  .group { margin-top: 6px; }
+  .group-h { padding: 6px 10px; font-family: ui-monospace, monospace; font-size: 11px; color: #7a8594; display: flex; justify-content: space-between; align-items: center; }
+  .group-h .chip { color: #5b6473; font-size: 10px; padding: 1px 6px; border: 1px solid #1d2128; border-radius: 3px; }
+  .sess { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-radius: 6px; cursor: pointer; color: #b8bec8; font-family: ui-monospace, monospace; font-size: 12px; }
   .sess:hover { background: #1a1f26; }
   .sess.active { background: #1f2933; color: #fff; }
   .sess .meta { font-size: 10px; color: #5b6473; display: flex; gap: 6px; align-items: center; }
@@ -40,7 +33,6 @@
   .sess:hover .kill { opacity: .7; }
   .sess .kill:hover { color: #ff6b6b; opacity: 1; }
 
-  /* main: terminal tabs + panes */
   main { display: flex; flex-direction: column; min-width: 0; }
   #tabs { display: flex; gap: 2px; padding: 6px 6px 0; background: #0b0d10; border-bottom: 1px solid #1d2128; overflow-x: auto; }
   .tab { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #111418; border: 1px solid #1d2128; border-bottom: 0; border-radius: 6px 6px 0 0; cursor: pointer; color: #8892a0; font-family: ui-monospace, monospace; font-size: 12px; white-space: nowrap; }
@@ -55,27 +47,33 @@
   .pane .xterm { height: 100%; }
   #status { padding: 4px 10px; font-size: 11px; color: #5b6473; background: #0b0d10; border-top: 1px solid #1d2128; font-family: ui-monospace, monospace; }
   #status .ok { color: #3fb950; } #status .warn { color: #d29922; } #status .err { color: #f85149; }
-  #welcome { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #5b6473; font-size: 13px; pointer-events: none; }
+  #welcome { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #5b6473; font-size: 13px; text-align: center; padding: 0 40px; gap: 8px; }
+  #welcome code { color: #8892a0; background: #111418; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="hosts">
-    <div id="brand">term-hub</div>
-    <!-- host tabs injected here -->
-  </div>
+  <header>
+    <div class="brand"><b>term-hub</b> <span id="hubInfo">—</span></div>
+    <div class="meta">
+      <span id="counter">0 sessions</span>
+      <span id="dot" class="ok">● live</span>
+    </div>
+  </header>
   <div id="body">
     <aside>
-      <div class="aside-h" id="asideTitle">sessions</div>
-      <div class="new">
-        <input id="sessName" placeholder="session name (blank = auto)" />
-        <button id="newBtn">+ New</button>
-      </div>
+      <div class="aside-h"><span>sessions</span><span id="liveAgents" class="chip-style"></span></div>
       <div id="sessions"></div>
     </aside>
     <main>
       <div id="tabs"></div>
-      <div id="panes"><div id="welcome">pick a host above, then click a session or create one</div></div>
+      <div id="panes">
+        <div id="welcome">
+          <div>No session opened yet.</div>
+          <div>Run an agent on any machine to publish a terminal here:</div>
+          <div><code>node agent.js http://<span id="selfHost">hub</span>:<span id="selfPort">7777</span></code></div>
+        </div>
+      </div>
       <div id="status">loading…</div>
     </main>
   </div>
@@ -84,119 +82,112 @@
 <script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
 <script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 <script>
-const hostsEl = document.getElementById('hosts');
-const asideTitle = document.getElementById('asideTitle');
+const hubInfoEl = document.getElementById('hubInfo');
+const counterEl = document.getElementById('counter');
+const dotEl = document.getElementById('dot');
 const sessionsEl = document.getElementById('sessions');
 const tabsEl = document.getElementById('tabs');
 const panesEl = document.getElementById('panes');
 const statusEl = document.getElementById('status');
-const nameInput = document.getElementById('sessName');
-const newBtn = document.getElementById('newBtn');
 const welcome = document.getElementById('welcome');
 
-// host.url may be "" (same origin) or absolute "http://host:port"
-const state = {
-  hosts: [],        // [{ name, url, info, sessions, online }]
-  activeHost: null, // name
-  tabs: new Map(),  // tabId -> { hostName, session, term, fit, ws, tabEl, paneEl }
-  activeTab: null,
-};
+document.getElementById('selfHost').textContent = location.hostname || 'hub';
+document.getElementById('selfPort').textContent = location.port || '7777';
 
-const baseUrl = (url) => (url || location.origin).replace(/\/$/, '');
-const wsUrlFor = (url, session, cols, rows) => {
-  const http = baseUrl(url);
-  const ws = http.replace(/^http/, 'ws');
-  return `${ws}/ws?session=${encodeURIComponent(session)}&cols=${cols}&rows=${rows}`;
-};
-const setStatus = (text, cls = '') => { statusEl.innerHTML = cls ? `<span class="${cls}">●</span> ${text}` : text; };
+const tabs = new Map(); // id -> { session, host, term, fit, ws, tabEl, paneEl }
+let activeTab = null;
+let sessionList = [];
 
-async function jget(url, timeoutMs = 3500) {
+const setStatus = (t, c = '') => { statusEl.innerHTML = c ? `<span class="${c}">●</span> ${t}` : t; };
+
+async function fetchJSON(url, ms = 3500) {
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctl.abort(), ms);
   try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
-  finally { clearTimeout(t); }
+  finally { clearTimeout(timer); }
 }
 
-async function loadHosts() {
-  const list = await jget('/api/hosts').catch(() => [{ name: 'self', url: '' }]);
-  state.hosts = list.map(h => ({ ...h, info: null, sessions: [], online: false }));
-  if (!state.activeHost && state.hosts[0]) state.activeHost = state.hosts[0].name;
-  await Promise.all(state.hosts.map(refreshHost));
-  renderHosts();
-  await renderSessions();
-}
-
-async function refreshHost(h) {
+async function loadInfo() {
   try {
-    h.info = await jget(baseUrl(h.url) + '/api/info');
-    h.sessions = await jget(baseUrl(h.url) + '/api/sessions');
-    h.online = true;
+    const info = await fetchJSON('/api/info');
+    hubInfoEl.textContent = `broker @ ${info.host} · ${info.platform}`;
+    dotEl.className = 'ok'; dotEl.textContent = '● live';
   } catch {
-    h.online = false;
+    hubInfoEl.textContent = '— (broker unreachable)';
+    dotEl.className = 'err'; dotEl.textContent = '● offline';
   }
 }
 
-function renderHosts() {
-  // drop everything except #brand
-  [...hostsEl.querySelectorAll('.host')].forEach(el => el.remove());
-  for (const h of state.hosts) {
-    const el = document.createElement('div');
-    el.className = 'host ' + (h.online ? 'on' : 'off') + (state.activeHost === h.name ? ' active' : '');
-    const mode = h.info?.mode ? `<span class="mode">${h.info.mode}</span>` : '';
-    el.innerHTML = `<span class="dot"></span><span>${h.name}</span>${mode}<span class="count">${h.sessions.length}</span>`;
-    el.onclick = () => { state.activeHost = h.name; renderHosts(); renderSessions(); };
-    hostsEl.appendChild(el);
-  }
+async function refreshSessions() {
+  let list = [];
+  try { list = await fetchJSON('/api/sessions'); }
+  catch { setStatus('cannot reach broker', 'err'); return; }
+  sessionList = list;
+  counterEl.textContent = `${list.length} session${list.length === 1 ? '' : 's'}`;
+  renderSessions();
 }
 
-async function renderSessions() {
-  const h = state.hosts.find(x => x.name === state.activeHost);
-  asideTitle.textContent = h ? `sessions — ${h.name}${h.info ? ' ('+h.info.host+')' : ''}` : 'sessions';
+function renderSessions() {
   sessionsEl.innerHTML = '';
-  if (!h) return;
-  if (!h.online) {
-    sessionsEl.innerHTML = `<div style="padding:12px;color:#f85149;font-size:12px">offline — ${baseUrl(h.url) || 'self'}</div>`;
+  if (sessionList.length === 0) {
+    sessionsEl.innerHTML = '<div style="padding:14px;color:#5b6473;font-size:12px">no active sessions — start an agent on some machine</div>';
     return;
   }
-  if (h.sessions.length === 0) {
-    sessionsEl.innerHTML = '<div style="padding:12px;color:#5b6473;font-size:12px">no sessions yet — create one</div>';
-    return;
+  // group by host
+  const byHost = new Map();
+  for (const s of sessionList) {
+    if (!byHost.has(s.host)) byHost.set(s.host, []);
+    byHost.get(s.host).push(s);
   }
-  for (const s of h.sessions) {
-    const row = document.createElement('div');
-    const isOpenTab = [...state.tabs.values()].some(t => t.hostName === h.name && t.session === s.name);
-    row.className = 'sess' + (isOpenTab ? ' active' : '');
-    const attached = s.attached ? '• attached' : '';
-    row.innerHTML = `<span>${s.name}</span><span class="meta"><span>${s.windows || 1}w ${attached}</span><a class="kill" title="kill">✕</a></span>`;
-    row.onclick = (e) => {
-      if (e.target.classList.contains('kill')) {
-        e.stopPropagation();
-        fetch(baseUrl(h.url) + `/api/sessions/${encodeURIComponent(s.name)}/kill`, { method: 'POST' })
-          .then(async () => { for (const [id, t] of state.tabs) if (t.hostName === h.name && t.session === s.name) closeTab(id); await refreshHost(h); renderSessions(); renderHosts(); });
-        return;
-      }
-      openSession(h, s.name);
-    };
-    sessionsEl.appendChild(row);
+  for (const [host, list] of [...byHost.entries()].sort()) {
+    const group = document.createElement('div');
+    group.className = 'group';
+    const h = document.createElement('div');
+    h.className = 'group-h';
+    h.innerHTML = `<span>${host}</span><span class="chip">${list.length}</span>`;
+    group.appendChild(h);
+    for (const s of list) {
+      const row = document.createElement('div');
+      const isOpen = [...tabs.values()].some(t => t.session === s.name);
+      row.className = 'sess' + (isOpen ? ' active' : '');
+      const subs = s.subscribers ? ` · ${s.subscribers} viewer${s.subscribers === 1 ? '' : 's'}` : '';
+      const up = s.uptimeSec != null ? ` · ${fmtUptime(s.uptimeSec)}` : '';
+      row.innerHTML = `<span>${s.name}</span><span class="meta"><span>${s.cols}×${s.rows}${subs}${up}</span><a class="kill" title="kill">✕</a></span>`;
+      row.onclick = (e) => {
+        if (e.target.classList.contains('kill')) {
+          e.stopPropagation();
+          fetch(`/api/sessions/${encodeURIComponent(s.name)}/kill`, { method: 'POST' })
+            .then(() => refreshSessions());
+          return;
+        }
+        openSession(s);
+      };
+      group.appendChild(row);
+    }
+    sessionsEl.appendChild(group);
   }
 }
 
-function openSession(h, session) {
-  for (const [id, t] of state.tabs) {
-    if (t.hostName === h.name && t.session === session) { activate(id); return; }
-  }
-  createTab(h, session);
+function fmtUptime(sec) {
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.round(sec / 60)}m`;
+  if (sec < 86400) return `${Math.round(sec / 3600)}h`;
+  return `${Math.round(sec / 86400)}d`;
 }
 
-function createTab(h, session) {
+function openSession(s) {
+  for (const [id, t] of tabs) if (t.session === s.name) { activate(id); return; }
+  createTab(s);
+}
+
+function createTab(s) {
   const id = 'tab-' + Math.random().toString(36).slice(2, 8);
   welcome?.remove();
+
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-    fontSize: 13,
-    cursorBlink: true,
-    theme: { background: '#000000' },
-    scrollback: 10000,
+    fontSize: 13, cursorBlink: true,
+    theme: { background: '#000000' }, scrollback: 10000,
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -209,25 +200,28 @@ function createTab(h, session) {
 
   const tabEl = document.createElement('div');
   tabEl.className = 'tab';
-  tabEl.innerHTML = `<span class="host-chip">${h.name}</span><span>${session}</span><span class="x" title="close">✕</span>`;
+  tabEl.innerHTML = `<span class="host-chip">${s.host}</span><span>${s.name}</span><span class="x" title="close">✕</span>`;
   tabEl.onclick = (e) => {
     if (e.target.classList.contains('x')) { e.stopPropagation(); closeTab(id); return; }
     activate(id);
   };
   tabsEl.appendChild(tabEl);
 
-  const { cols, rows } = term;
-  const ws = new WebSocket(wsUrlFor(h.url, session, cols, rows));
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${proto}://${location.host}/ws/subscribe?session=${encodeURIComponent(s.name)}`;
+  const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
-  ws.onopen = () => setStatus(`connected: ${h.name}:${session}`, 'ok');
+  ws.onopen = () => setStatus(`attaching: ${s.host}:${s.name}`);
   ws.onmessage = (ev) => {
     if (typeof ev.data === 'string') {
       if (ev.data.startsWith('{')) {
         try {
           const msg = JSON.parse(ev.data);
-          if (msg.type === 'ready') { setStatus(`ready: ${h.name}:${session} @ ${msg.host} [${msg.mode}]`, 'ok'); return; }
-          if (msg.type === 'exit') { setStatus(`exited: ${h.name}:${session} (${msg.exitCode})`, 'warn'); return; }
+          if (msg.type === 'attached') { setStatus(`attached: ${msg.host}:${msg.session}`, 'ok'); return; }
+          if (msg.type === 'exit') { setStatus(`exited: ${s.host}:${s.name} (${msg.exitCode})`, 'warn'); return; }
+          if (msg.type === 'publisher-gone') { setStatus(`publisher gone: ${s.host}:${s.name}`, 'warn'); return; }
+          if (msg.type === 'resize') { return; /* publisher resized; we follow via fit on our side */ }
         } catch {}
       }
       term.write(ev.data);
@@ -235,22 +229,22 @@ function createTab(h, session) {
       term.write(new Uint8Array(ev.data));
     }
   };
-  ws.onclose = () => setStatus(`disconnected: ${h.name}:${session}`, 'warn');
-  ws.onerror = () => setStatus(`error: ${h.name}:${session}`, 'err');
+  ws.onclose = () => setStatus(`disconnected: ${s.host}:${s.name}`, 'warn');
+  ws.onerror = () => setStatus(`error: ${s.host}:${s.name}`, 'err');
 
   term.onData(d => { if (ws.readyState === 1) ws.send(d); });
   term.onResize(({ cols, rows }) => {
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
   });
 
-  state.tabs.set(id, { hostName: h.name, session, term, fit, ws, tabEl, paneEl });
+  tabs.set(id, { session: s.name, host: s.host, term, fit, ws, tabEl, paneEl });
   activate(id);
-  setTimeout(() => refreshHost(h).then(() => { renderHosts(); renderSessions(); }), 400);
+  setTimeout(refreshSessions, 300);
 }
 
 function activate(id) {
-  state.activeTab = id;
-  for (const [tid, t] of state.tabs) {
+  activeTab = id;
+  for (const [tid, t] of tabs) {
     const on = tid === id;
     t.tabEl.classList.toggle('active', on);
     t.paneEl.classList.toggle('active', on);
@@ -260,38 +254,27 @@ function activate(id) {
 }
 
 function closeTab(id) {
-  const t = state.tabs.get(id); if (!t) return;
+  const t = tabs.get(id); if (!t) return;
   try { t.ws.close(); } catch {}
   try { t.term.dispose(); } catch {}
   t.tabEl.remove(); t.paneEl.remove();
-  state.tabs.delete(id);
-  if (state.activeTab === id) {
-    const next = state.tabs.keys().next().value;
-    state.activeTab = null;
+  tabs.delete(id);
+  if (activeTab === id) {
+    const next = tabs.keys().next().value;
+    activeTab = null;
     if (next) activate(next); else setStatus('no open tabs');
   }
   renderSessions();
 }
 
-newBtn.onclick = () => {
-  const h = state.hosts.find(x => x.name === state.activeHost);
-  if (!h) return;
-  const name = nameInput.value.trim() || `${h.info?.host || h.name}-${Math.random().toString(36).slice(2, 5)}`;
-  nameInput.value = '';
-  openSession(h, name);
-};
-nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') newBtn.click(); });
-
 window.addEventListener('resize', () => {
-  const t = state.tabs.get(state.activeTab); if (t) t.fit.fit();
+  const t = tabs.get(activeTab); if (t) t.fit.fit();
 });
 
 (async () => {
-  await loadHosts();
-  setInterval(async () => {
-    await Promise.all(state.hosts.map(refreshHost));
-    renderHosts(); renderSessions();
-  }, 3000);
+  await loadInfo();
+  await refreshSessions();
+  setInterval(async () => { await loadInfo(); await refreshSessions(); }, 2500);
 })();
 </script>
 </body>

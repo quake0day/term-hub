@@ -1,104 +1,44 @@
+// term-hub broker — central pub/sub hub for terminal sessions.
+// Agents (see agent.js) run on each machine, spawn a local shell PTY,
+// and publish its I/O here. Browsers subscribe via /ws/subscribe to mirror
+// and control sessions. No local PTY, no tmux dependency on the broker.
+
 const express = require('express');
 const http = require('http');
-const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-const pty = require('node-pty');
-const { execSync } = require('child_process');
 const os = require('os');
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 7777;
 const HOST = process.env.HOST || '0.0.0.0';
-const IS_WIN = process.platform === 'win32';
-const SHELL = process.env.SHELL || (IS_WIN ? (process.env.COMSPEC || 'cmd.exe') : '/bin/bash');
 const HISTORY_BYTES = Number(process.env.TERM_HUB_HISTORY) || 256 * 1024;
-const HOSTS_FILE = process.env.TERM_HUB_HOSTS || path.join(__dirname, 'hosts.json');
 
-function resolveTmux() {
-  if (IS_WIN) return null;
-  if (process.env.TMUX_BIN) return process.env.TMUX_BIN;
-  const candidates = ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux'];
-  for (const p of candidates) {
-    try { execSync(`${p} -V`, { stdio: 'ignore' }); return p; } catch {}
+// sessions: name -> Session
+// Session shape:
+//   { name, host, cols, rows, createdAt, publisher:WS, subscribers:Set<WS>,
+//     history:Buffer[], historyBytes }
+const sessions = new Map();
+
+function pushHistory(s, buf) {
+  s.history.push(buf);
+  s.historyBytes += buf.length;
+  while (s.historyBytes > HISTORY_BYTES && s.history.length > 1) {
+    s.historyBytes -= s.history[0].length;
+    s.history.shift();
   }
-  try { return execSync('command -v tmux', { shell: '/bin/sh', encoding: 'utf8' }).trim() || null; }
-  catch { return null; }
 }
-const TMUX = resolveTmux();
-const FANOUT = !TMUX || process.env.TERM_HUB_NO_TMUX === '1';
-
-// ---- fan-out session registry (used when no tmux) --------------------------
-const sessions = new Map(); // name -> Session
-
-function defaultShellArgs() {
-  if (IS_WIN) return { cmd: 'powershell.exe', args: [] };
-  return { cmd: SHELL, args: ['-l'] };
+function broadcast(s, data) {
+  for (const sub of s.subscribers) if (sub.readyState === 1) sub.send(data);
 }
-
-function makeSession(name, cols, rows) {
-  const { cmd, args } = defaultShellArgs();
-  const p = pty.spawn(cmd, args, {
-    name: 'xterm-256color',
-    cols, rows,
-    cwd: process.env.HOME || process.env.USERPROFILE || '/',
-    env: process.env,
-  });
-  const s = {
-    name, pty: p, subs: new Set(),
-    history: [], historyBytes: 0,
-    cols, rows,
-    createdAt: Date.now(),
-    exited: false, exitCode: null,
-  };
-  p.onData(chunk => {
-    const buf = Buffer.from(chunk);
-    s.history.push(buf); s.historyBytes += buf.length;
-    while (s.historyBytes > HISTORY_BYTES && s.history.length > 1) {
-      s.historyBytes -= s.history[0].length;
-      s.history.shift();
-    }
-    for (const ws of s.subs) if (ws.readyState === 1) ws.send(chunk);
-  });
-  p.onExit(({ exitCode }) => {
-    s.exited = true; s.exitCode = exitCode;
-    for (const ws of s.subs) if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', exitCode }));
-    sessions.delete(name);
-  });
-  sessions.set(name, s);
-  return s;
-}
-
-function listFanoutSessions() {
-  return [...sessions.values()].map(s => ({
-    name: s.name, windows: 1, attached: s.subs.size > 0, subs: s.subs.size,
+function publicSession(s) {
+  return {
+    name: s.name, host: s.host, cols: s.cols, rows: s.rows,
+    subscribers: s.subscribers.size,
     uptimeSec: Math.round((Date.now() - s.createdAt) / 1000),
-  }));
+  };
 }
 
-// ---- tmux helpers ----------------------------------------------------------
-function listTmuxSessions() {
-  if (!TMUX) return [];
-  try {
-    const out = execSync(`${TMUX} list-sessions -F '#{session_name}\t#{session_windows}\t#{session_attached}'`, { encoding: 'utf8' });
-    return out.trim().split('\n').filter(Boolean).map(line => {
-      const [name, windows, attached] = line.split('\t');
-      return { name, windows: Number(windows), attached: attached !== '0' };
-    });
-  } catch { return []; }
-}
-
-// ---- host list -------------------------------------------------------------
-function readHosts() {
-  try {
-    const raw = fs.readFileSync(HOSTS_FILE, 'utf8');
-    const arr = JSON.parse(raw);
-    if (Array.isArray(arr)) return arr;
-  } catch {}
-  // Default: only self (relative URL — browser uses same origin)
-  return [{ name: os.hostname().split('.')[0], url: '' }];
-}
-
-// ---- HTTP ------------------------------------------------------------------
+// ---- HTTP ----
 const app = express();
 app.use(express.json());
 app.use((req, res, next) => {
@@ -110,101 +50,113 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/info', (_req, res) => {
-  res.json({
-    host: os.hostname().split('.')[0],
-    fqdn: os.hostname(),
-    platform: process.platform,
-    hasTmux: !!TMUX && !FANOUT,
-    mode: FANOUT ? 'fanout' : 'tmux',
-    shell: SHELL,
-  });
-});
+app.get('/api/info', (_, res) => res.json({
+  host: os.hostname().split('.')[0],
+  platform: process.platform,
+  role: 'broker',
+  sessions: sessions.size,
+}));
 
-app.get('/api/hosts', (_req, res) => res.json(readHosts()));
-
-app.get('/api/sessions', (_req, res) => {
-  res.json(FANOUT ? listFanoutSessions() : listTmuxSessions());
+app.get('/api/sessions', (_, res) => {
+  res.json([...sessions.values()].map(publicSession));
 });
 
 app.post('/api/sessions/:name/kill', (req, res) => {
-  const name = req.params.name;
-  if (FANOUT) {
-    const s = sessions.get(name);
-    if (!s) return res.status(404).json({ error: 'no such session' });
-    try { s.pty.kill(); } catch {}
-    sessions.delete(name);
-    return res.json({ ok: true });
-  }
-  try { execSync(`${TMUX} kill-session -t ${JSON.stringify(name)}`); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: String(e) }); }
+  const s = sessions.get(req.params.name);
+  if (!s) return res.status(404).json({ error: 'no such session' });
+  try { s.publisher.send(JSON.stringify({ type: 'kill' })); } catch {}
+  try { s.publisher.close(4000, 'killed'); } catch {}
+  res.json({ ok: true });
 });
 
-// ---- WebSocket -------------------------------------------------------------
+// ---- WebSocket: /ws/publish  &  /ws/subscribe ----
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+const pubWss = new WebSocketServer({ noServer: true });
+const subWss = new WebSocketServer({ noServer: true });
 
-wss.on('connection', (ws, req) => {
+server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://x');
-  const sessionName = url.searchParams.get('session') || `sess-${Date.now()}`;
+  if (url.pathname === '/ws/publish') {
+    pubWss.handleUpgrade(req, socket, head, ws => pubWss.emit('connection', ws, req));
+  } else if (url.pathname === '/ws/subscribe') {
+    subWss.handleUpgrade(req, socket, head, ws => subWss.emit('connection', ws, req));
+  } else {
+    socket.destroy();
+  }
+});
+
+pubWss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'http://x');
+  const name = url.searchParams.get('session');
+  const host = url.searchParams.get('host') || 'unknown';
   const cols = Number(url.searchParams.get('cols')) || 120;
   const rows = Number(url.searchParams.get('rows')) || 32;
-  const hostName = os.hostname().split('.')[0];
+  if (!name) { ws.close(4001, 'session required'); return; }
+  if (sessions.has(name)) { ws.close(4002, 'session name in use'); return; }
 
-  if (FANOUT) {
-    const s = sessions.get(sessionName) || makeSession(sessionName, cols, rows);
-    s.subs.add(ws);
-    try { s.pty.resize(cols, rows); s.cols = cols; s.rows = rows; } catch {}
-    ws.send(JSON.stringify({ type: 'ready', session: sessionName, host: hostName, pid: s.pty.pid, mode: 'fanout', subs: s.subs.size }));
-    // Replay history so new client sees recent output
-    for (const chunk of s.history) if (ws.readyState === 1) ws.send(chunk);
-
-    ws.on('message', (buf, isBinary) => {
-      if (isBinary) { try { s.pty.write(buf); } catch {} return; }
-      const str = buf.toString();
-      if (str.startsWith('{')) {
-        try {
-          const msg = JSON.parse(str);
-          if (msg.type === 'resize') { try { s.pty.resize(msg.cols, msg.rows); s.cols = msg.cols; s.rows = msg.rows; } catch {} return; }
-          if (msg.type === 'input') { try { s.pty.write(msg.data); } catch {} return; }
-        } catch {}
-      }
-      try { s.pty.write(str); } catch {}
-    });
-    ws.on('close', () => { s.subs.delete(ws); });
-    return;
-  }
-
-  // tmux-backed session: spawn a fresh tmux client per WS
-  const term = pty.spawn(TMUX, ['new-session', '-A', '-s', sessionName], {
-    name: 'xterm-256color',
-    cols, rows,
-    cwd: process.env.HOME,
-    env: process.env,
-  });
-
-  ws.send(JSON.stringify({ type: 'ready', session: sessionName, host: hostName, pid: term.pid, mode: 'tmux' }));
-  term.onData(d => { if (ws.readyState === 1) ws.send(d); });
-  term.onExit(({ exitCode }) => {
-    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'exit', exitCode }));
-    ws.close();
-  });
+  const s = {
+    name, host, cols, rows,
+    createdAt: Date.now(),
+    publisher: ws, subscribers: new Set(),
+    history: [], historyBytes: 0,
+  };
+  sessions.set(name, s);
+  ws.send(JSON.stringify({ type: 'registered', session: name }));
+  console.log(`[pub] + ${name}@${host} (${cols}x${rows})`);
 
   ws.on('message', (buf, isBinary) => {
-    if (isBinary) { term.write(buf); return; }
+    if (isBinary) {
+      const b = Buffer.from(buf);
+      pushHistory(s, b);
+      broadcast(s, b);
+      return;
+    }
     const str = buf.toString();
     if (str.startsWith('{')) {
       try {
         const msg = JSON.parse(str);
-        if (msg.type === 'resize') { term.resize(msg.cols, msg.rows); return; }
-        if (msg.type === 'input') { term.write(msg.data); return; }
+        if (msg.type === 'exit') {
+          broadcast(s, JSON.stringify({ type: 'exit', exitCode: msg.exitCode }));
+          return;
+        }
+        if (msg.type === 'resize') {
+          s.cols = msg.cols; s.rows = msg.rows;
+          broadcast(s, str);
+          return;
+        }
       } catch {}
     }
-    term.write(str);
+    const b = Buffer.from(str);
+    pushHistory(s, b);
+    broadcast(s, str);
   });
-  ws.on('close', () => { try { term.kill(); } catch {} });
+
+  ws.on('close', () => {
+    broadcast(s, JSON.stringify({ type: 'publisher-gone', session: name }));
+    sessions.delete(name);
+    console.log(`[pub] - ${name}@${host}`);
+  });
+});
+
+subWss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'http://x');
+  const name = url.searchParams.get('session');
+  if (!name) { ws.close(4001, 'session required'); return; }
+  const s = sessions.get(name);
+  if (!s) { ws.close(4004, 'no such session'); return; }
+
+  s.subscribers.add(ws);
+  ws.send(JSON.stringify({ type: 'attached', session: name, host: s.host, cols: s.cols, rows: s.rows }));
+  for (const chunk of s.history) if (ws.readyState === 1) ws.send(chunk);
+
+  ws.on('message', (buf, isBinary) => {
+    if (s.publisher.readyState !== 1) return;
+    if (isBinary) { s.publisher.send(Buffer.from(buf)); return; }
+    s.publisher.send(buf.toString());
+  });
+  ws.on('close', () => s.subscribers.delete(ws));
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`term-hub listening on http://${HOST}:${PORT}  [mode=${FANOUT ? 'fanout' : 'tmux'}${TMUX ? ' ('+TMUX+')' : ''}]`);
+  console.log(`term-hub broker on http://${HOST}:${PORT}  (history=${HISTORY_BYTES}B)`);
 });

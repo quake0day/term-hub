@@ -7,5 +7,3 @@ yarn-error.log*
 .env.local
 *.log
 
-# User-specific host map — copy hosts.json.example to hosts.json and edit
-hosts.json
