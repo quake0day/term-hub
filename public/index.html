@@ -249,45 +249,73 @@ function createTab(s) {
   };
   tabsEl.appendChild(tabEl);
 
+  // Wrap WS in a reconnect loop — the xterm.js instance stays, and the hub
+  // replays history on each attach so you pick up where you left off.
+  const entry = {
+    session: s.name, host: s.host, term, fit,
+    tabEl, paneEl, ws: null, closed: false,
+    retryMs: 0, retryTimer: null,
+  };
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const wsUrl = `${proto}://${location.host}/ws/subscribe?session=${encodeURIComponent(s.name)}`;
-  const ws = new WebSocket(wsUrl);
-  ws.binaryType = 'arraybuffer';
-
-  ws.onopen = () => setStatus(`attaching: ${s.host}:${s.name}`);
-  ws.onmessage = (ev) => {
-    if (typeof ev.data === 'string') {
-      if (ev.data.startsWith('{')) {
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg.type === 'attached') { setStatus(`attached: ${msg.host}:${msg.session}`, 'ok'); return; }
-          if (msg.type === 'exit') { setStatus(`exited: ${s.host}:${s.name} (${msg.exitCode})`, 'warn'); return; }
-          if (msg.type === 'publisher-gone') { setStatus(`publisher gone: ${s.host}:${s.name}`, 'warn'); return; }
-          if (msg.type === 'resize') { return; /* publisher resized; we follow via fit on our side */ }
-        } catch {}
-      }
-      term.write(ev.data);
-    } else {
-      term.write(new Uint8Array(ev.data));
-    }
-  };
-  ws.onclose = () => setStatus(`disconnected: ${s.host}:${s.name}`, 'warn');
-  ws.onerror = () => setStatus(`error: ${s.host}:${s.name}`, 'err');
 
   // Second-level guard: strip any report-shaped escape sequence that still
-  // slips through (e.g. CPR `ESC [ n;m R`, status `ESC [ 0 n`). User-typed
-  // arrow/Home/End/F-keys all end in A-H, P-S, or ~ — never c / n / R.
+  // slips through (CPR `ESC [ n;m R`, status `ESC [ 0 n`). User-typed arrow /
+  // Home / End / F-keys end in A-H, P-S, or ~ — never c / n / R.
   const REPORT_RE = /\x1b\[(\?[\d;]*c|>[\d;]*c|=[\d;]*c|[\d;]*[Rn])/g;
+
+  function connect() {
+    if (entry.closed) return;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    entry.ws = ws;
+
+    ws.onopen = () => {
+      entry.retryMs = 0;
+      setStatus(`attaching: ${s.host}:${s.name}`);
+    };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        if (ev.data.startsWith('{')) {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === 'attached')       { setStatus(`attached: ${msg.host}:${msg.session}`, 'ok'); return; }
+            if (msg.type === 'exit')           { setStatus(`exited: ${s.host}:${s.name} (${msg.exitCode})`, 'warn'); return; }
+            if (msg.type === 'publisher-gone') { setStatus(`publisher gone: ${s.host}:${s.name} — waiting for agent to return…`, 'warn'); return; }
+            if (msg.type === 'resize')         { return; }
+          } catch {}
+        }
+        term.write(ev.data);
+      } else {
+        term.write(new Uint8Array(ev.data));
+      }
+    };
+    ws.onerror = () => { /* onclose schedules retry */ };
+    ws.onclose = (ev) => {
+      if (entry.closed) return;
+      // 4004 = no such session yet; poll quickly so we catch the agent reconnecting.
+      const delay = ev.code === 4004
+        ? 1500
+        : Math.max(entry.retryMs || 1000, 1000);
+      entry.retryMs = Math.min(delay * 1.6, 10_000);
+      setStatus(`reconnecting ${s.host}:${s.name} in ${Math.round(delay / 1000)}s (${ev.code || '—'})`, 'warn');
+      entry.retryTimer = setTimeout(connect, delay);
+    };
+  }
+
   term.onData(d => {
-    if (ws.readyState !== 1) return;
+    const ws = entry.ws;
+    if (!ws || ws.readyState !== 1) return;
     const clean = d.replace(REPORT_RE, '');
     if (clean) ws.send(clean);
   });
   term.onResize(({ cols, rows }) => {
-    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+    const ws = entry.ws;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
   });
 
-  tabs.set(id, { session: s.name, host: s.host, term, fit, ws, tabEl, paneEl });
+  tabs.set(id, entry);
+  connect();
   activate(id);
   setTimeout(refreshSessions, 300);
 }
@@ -305,7 +333,9 @@ function activate(id) {
 
 function closeTab(id) {
   const t = tabs.get(id); if (!t) return;
-  try { t.ws.close(); } catch {}
+  t.closed = true;
+  if (t.retryTimer) clearTimeout(t.retryTimer);
+  try { t.ws && t.ws.close(); } catch {}
   try { t.term.dispose(); } catch {}
   t.tabEl.remove(); t.paneEl.remove();
   tabs.delete(id);

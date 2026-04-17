@@ -74,6 +74,26 @@ const server = http.createServer(app);
 const pubWss = new WebSocketServer({ noServer: true });
 const subWss = new WebSocketServer({ noServer: true });
 
+// Heartbeat: every 30s ping each client; if no pong since previous tick, kill
+// the socket. Keeps half-closed TCPs (sleeping laptops, NATs dropping idle
+// connections) from lingering as zombie "attached" sessions.
+function heartbeat(wss) {
+  wss.on('connection', ws => {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+  });
+  const tick = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) { try { ws.terminate(); } catch {}; continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch {}
+    }
+  }, 30_000);
+  wss.on('close', () => clearInterval(tick));
+}
+heartbeat(pubWss);
+heartbeat(subWss);
+
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/ws/publish') {

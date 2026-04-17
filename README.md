@@ -40,8 +40,11 @@ and a Windows desktop. Now the broker is a common workbench for all of them.
 - **Real bidirectional.** Type in the browser, it shows up on the machine. Type
   on the machine, it shows up in the browser. tmux handles local persistence,
   the agent handles the network.
-- **Offline-safe.** Your native terminal keeps working even when the broker is
-  down or you're on another network. Agent reconnects automatically.
+- **Offline-safe, fully reconnecting.** Agent auto-reconnects to the broker
+  every 3s with a 256KB pre-connect output buffer flushed on reconnect;
+  browser tabs reconnect with exponential backoff; broker heartbeats every 30s
+  kill zombie TCPs. Restart the broker mid-session — everyone finds each
+  other again without you doing anything.
 - **Multi-viewer.** Any number of browser tabs can subscribe to the same
   session; all mirror the same live stream with a 256KB replay buffer for
   late-joiners.
