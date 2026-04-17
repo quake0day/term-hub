@@ -204,6 +204,25 @@ function createTab(s) {
   panesEl.appendChild(paneEl);
   term.open(paneEl);
 
+  // Suppress xterm.js auto-replies to terminal-capability queries (DA1/DA2/DA3,
+  // DSR, XTVERSION). The hub replays session history on attach — if any of it
+  // contains such a query, xterm.js would otherwise answer it and that answer
+  // would be sent back through the hub as *typed input*, landing as garbage
+  // on the publisher's local shell. The authoritative responder is already
+  // the agent's native TTY; subscribers must stay silent.
+  const suppress = () => true;
+  try {
+    const P = term.parser;
+    if (P) {
+      P.registerCsiHandler({ final: 'c' }, suppress);                  // DA1
+      P.registerCsiHandler({ prefix: '>', final: 'c' }, suppress);     // DA2
+      P.registerCsiHandler({ prefix: '=', final: 'c' }, suppress);     // DA3
+      P.registerCsiHandler({ final: 'n' }, suppress);                  // DSR
+      P.registerCsiHandler({ prefix: '?', final: 'n' }, suppress);     // private DSR
+      P.registerDcsHandler({ intermediates: '+', final: 'q' }, suppress); // XTGETTCAP
+    }
+  } catch {}
+
   // Prefer WebGL renderer (sharpest block-element glyphs), fall back to Canvas.
   // Both render Unicode box-drawing / half-block characters as perfect vectors,
   // eliminating the seams that the DOM renderer leaves between cells.
@@ -255,7 +274,15 @@ function createTab(s) {
   ws.onclose = () => setStatus(`disconnected: ${s.host}:${s.name}`, 'warn');
   ws.onerror = () => setStatus(`error: ${s.host}:${s.name}`, 'err');
 
-  term.onData(d => { if (ws.readyState === 1) ws.send(d); });
+  // Second-level guard: strip any report-shaped escape sequence that still
+  // slips through (e.g. CPR `ESC [ n;m R`, status `ESC [ 0 n`). User-typed
+  // arrow/Home/End/F-keys all end in A-H, P-S, or ~ — never c / n / R.
+  const REPORT_RE = /\x1b\[(\?[\d;]*c|>[\d;]*c|=[\d;]*c|[\d;]*[Rn])/g;
+  term.onData(d => {
+    if (ws.readyState !== 1) return;
+    const clean = d.replace(REPORT_RE, '');
+    if (clean) ws.send(clean);
+  });
   term.onResize(({ cols, rows }) => {
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
   });
