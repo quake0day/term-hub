@@ -1,0 +1,5 @@
+[
+  { "name": "mac",    "url": "" },
+  { "name": "server", "url": "http://10.0.0.2:7777" },
+  { "name": "win",    "url": "http://10.0.0.3:7777" }
+]

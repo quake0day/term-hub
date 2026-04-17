@@ -1,0 +1,23 @@
+{
+  "name": "term-hub",
+  "version": "0.1.0",
+  "description": "One web page to see and control every terminal you own — tmux-aware, fan-out, cross-host.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "attach": "node attach.js"
+  },
+  "bin": {
+    "term-hub": "./server.js",
+    "term-hub-attach": "./attach.js"
+  },
+  "keywords": ["terminal", "tmux", "pty", "xterm", "web-terminal", "remote-terminal"],
+  "author": "quake0day",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/quake0day/term-hub.git" },
+  "dependencies": {
+    "express": "^5.2.1",
+    "node-pty": "^1.1.0",
+    "ws": "^8.20.0"
+  }
+}

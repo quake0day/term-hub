@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>term-hub</title>
+<link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b0d10; color: #d6d7d9; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  #app { display: grid; grid-template-rows: 40px 1fr; height: 100vh; }
+
+  /* top bar: host tabs */
+  #hosts { display: flex; align-items: stretch; background: #0b0d10; border-bottom: 1px solid #1d2128; overflow-x: auto; }
+  .host { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-right: 1px solid #1d2128; cursor: pointer; color: #8892a0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: nowrap; }
+  .host:hover { background: #111418; color: #d6d7d9; }
+  .host.active { background: #111418; color: #fff; box-shadow: inset 0 -2px 0 #2f81f7; }
+  .host .dot { width: 8px; height: 8px; border-radius: 50%; background: #5b6473; }
+  .host.on .dot { background: #3fb950; }
+  .host.off .dot { background: #f85149; }
+  .host .count { color: #5b6473; font-size: 11px; }
+  .host .mode { color: #5b6473; font-size: 10px; padding: 2px 5px; border: 1px solid #1d2128; border-radius: 3px; }
+  #brand { display: flex; align-items: center; padding: 0 16px; color: #5b6473; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; border-right: 1px solid #1d2128; }
+
+  /* body: sidebar + main */
+  #body { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  aside { background: #111418; border-right: 1px solid #1d2128; display: flex; flex-direction: column; min-height: 0; }
+  .aside-h { padding: 10px 14px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #5b6473; border-bottom: 1px solid #1d2128; }
+  .new { margin: 8px; display: flex; gap: 6px; }
+  .new input { flex: 1; background: #0b0d10; border: 1px solid #1d2128; color: #d6d7d9; padding: 6px 8px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .new button { background: #2f81f7; border: 0; color: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; }
+  .new button:hover { background: #3b8ff8; }
+  #sessions { flex: 1; overflow: auto; padding: 4px 8px 8px; }
+  .sess { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: #b8bec8; font-family: ui-monospace, monospace; font-size: 12px; }
+  .sess:hover { background: #1a1f26; }
+  .sess.active { background: #1f2933; color: #fff; }
+  .sess .meta { font-size: 10px; color: #5b6473; display: flex; gap: 6px; align-items: center; }
+  .sess .kill { opacity: 0; color: #8892a0; padding: 0 4px; }
+  .sess:hover .kill { opacity: .7; }
+  .sess .kill:hover { color: #ff6b6b; opacity: 1; }
+
+  /* main: terminal tabs + panes */
+  main { display: flex; flex-direction: column; min-width: 0; }
+  #tabs { display: flex; gap: 2px; padding: 6px 6px 0; background: #0b0d10; border-bottom: 1px solid #1d2128; overflow-x: auto; }
+  .tab { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #111418; border: 1px solid #1d2128; border-bottom: 0; border-radius: 6px 6px 0 0; cursor: pointer; color: #8892a0; font-family: ui-monospace, monospace; font-size: 12px; white-space: nowrap; }
+  .tab.active { background: #0b0d10; color: #fff; border-color: #2f81f7; }
+  .tab .host-chip { font-size: 10px; color: #5b6473; padding: 1px 5px; border: 1px solid #1d2128; border-radius: 3px; }
+  .tab.active .host-chip { border-color: #2f81f7; color: #6daaff; }
+  .tab .x { color: #5b6473; padding: 0 2px; }
+  .tab .x:hover { color: #ff6b6b; }
+  #panes { flex: 1; position: relative; background: #000; }
+  .pane { position: absolute; inset: 0; padding: 6px; display: none; }
+  .pane.active { display: block; }
+  .pane .xterm { height: 100%; }
+  #status { padding: 4px 10px; font-size: 11px; color: #5b6473; background: #0b0d10; border-top: 1px solid #1d2128; font-family: ui-monospace, monospace; }
+  #status .ok { color: #3fb950; } #status .warn { color: #d29922; } #status .err { color: #f85149; }
+  #welcome { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #5b6473; font-size: 13px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hosts">
+    <div id="brand">term-hub</div>
+    <!-- host tabs injected here -->
+  </div>
+  <div id="body">
+    <aside>
+      <div class="aside-h" id="asideTitle">sessions</div>
+      <div class="new">
+        <input id="sessName" placeholder="session name (blank = auto)" />
+        <button id="newBtn">+ New</button>
+      </div>
+      <div id="sessions"></div>
+    </aside>
+    <main>
+      <div id="tabs"></div>
+      <div id="panes"><div id="welcome">pick a host above, then click a session or create one</div></div>
+      <div id="status">loading…</div>
+    </main>
+  </div>
+</div>
+
+<script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<script>
+const hostsEl = document.getElementById('hosts');
+const asideTitle = document.getElementById('asideTitle');
+const sessionsEl = document.getElementById('sessions');
+const tabsEl = document.getElementById('tabs');
+const panesEl = document.getElementById('panes');
+const statusEl = document.getElementById('status');
+const nameInput = document.getElementById('sessName');
+const newBtn = document.getElementById('newBtn');
+const welcome = document.getElementById('welcome');
+
+// host.url may be "" (same origin) or absolute "http://host:port"
+const state = {
+  hosts: [],        // [{ name, url, info, sessions, online }]
+  activeHost: null, // name
+  tabs: new Map(),  // tabId -> { hostName, session, term, fit, ws, tabEl, paneEl }
+  activeTab: null,
+};
+
+const baseUrl = (url) => (url || location.origin).replace(/\/$/, '');
+const wsUrlFor = (url, session, cols, rows) => {
+  const http = baseUrl(url);
+  const ws = http.replace(/^http/, 'ws');
+  return `${ws}/ws?session=${encodeURIComponent(session)}&cols=${cols}&rows=${rows}`;
+};
+const setStatus = (text, cls = '') => { statusEl.innerHTML = cls ? `<span class="${cls}">●</span> ${text}` : text; };
+
+async function jget(url, timeoutMs = 3500) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+
+async function loadHosts() {
+  const list = await jget('/api/hosts').catch(() => [{ name: 'self', url: '' }]);
+  state.hosts = list.map(h => ({ ...h, info: null, sessions: [], online: false }));
+  if (!state.activeHost && state.hosts[0]) state.activeHost = state.hosts[0].name;
+  await Promise.all(state.hosts.map(refreshHost));
+  renderHosts();
+  await renderSessions();
+}
+
+async function refreshHost(h) {
+  try {
+    h.info = await jget(baseUrl(h.url) + '/api/info');
+    h.sessions = await jget(baseUrl(h.url) + '/api/sessions');
+    h.online = true;
+  } catch {
+    h.online = false;
+  }
+}
+
+function renderHosts() {
+  // drop everything except #brand
+  [...hostsEl.querySelectorAll('.host')].forEach(el => el.remove());
+  for (const h of state.hosts) {
+    const el = document.createElement('div');
+    el.className = 'host ' + (h.online ? 'on' : 'off') + (state.activeHost === h.name ? ' active' : '');
+    const mode = h.info?.mode ? `<span class="mode">${h.info.mode}</span>` : '';
+    el.innerHTML = `<span class="dot"></span><span>${h.name}</span>${mode}<span class="count">${h.sessions.length}</span>`;
+    el.onclick = () => { state.activeHost = h.name; renderHosts(); renderSessions(); };
+    hostsEl.appendChild(el);
+  }
+}
+
+async function renderSessions() {
+  const h = state.hosts.find(x => x.name === state.activeHost);
+  asideTitle.textContent = h ? `sessions — ${h.name}${h.info ? ' ('+h.info.host+')' : ''}` : 'sessions';
+  sessionsEl.innerHTML = '';
+  if (!h) return;
+  if (!h.online) {
+    sessionsEl.innerHTML = `<div style="padding:12px;color:#f85149;font-size:12px">offline — ${baseUrl(h.url) || 'self'}</div>`;
+    return;
+  }
+  if (h.sessions.length === 0) {
+    sessionsEl.innerHTML = '<div style="padding:12px;color:#5b6473;font-size:12px">no sessions yet — create one</div>';
+    return;
+  }
+  for (const s of h.sessions) {
+    const row = document.createElement('div');
+    const isOpenTab = [...state.tabs.values()].some(t => t.hostName === h.name && t.session === s.name);
+    row.className = 'sess' + (isOpenTab ? ' active' : '');
+    const attached = s.attached ? '• attached' : '';
+    row.innerHTML = `<span>${s.name}</span><span class="meta"><span>${s.windows || 1}w ${attached}</span><a class="kill" title="kill">✕</a></span>`;
+    row.onclick = (e) => {
+      if (e.target.classList.contains('kill')) {
+        e.stopPropagation();
+        fetch(baseUrl(h.url) + `/api/sessions/${encodeURIComponent(s.name)}/kill`, { method: 'POST' })
+          .then(async () => { for (const [id, t] of state.tabs) if (t.hostName === h.name && t.session === s.name) closeTab(id); await refreshHost(h); renderSessions(); renderHosts(); });
+        return;
+      }
+      openSession(h, s.name);
+    };
+    sessionsEl.appendChild(row);
+  }
+}
+
+function openSession(h, session) {
+  for (const [id, t] of state.tabs) {
+    if (t.hostName === h.name && t.session === session) { activate(id); return; }
+  }
+  createTab(h, session);
+}
+
+function createTab(h, session) {
+  const id = 'tab-' + Math.random().toString(36).slice(2, 8);
+  welcome?.remove();
+  const term = new Terminal({
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 13,
+    cursorBlink: true,
+    theme: { background: '#000000' },
+    scrollback: 10000,
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+
+  const paneEl = document.createElement('div');
+  paneEl.className = 'pane';
+  panesEl.appendChild(paneEl);
+  term.open(paneEl);
+  fit.fit();
+
+  const tabEl = document.createElement('div');
+  tabEl.className = 'tab';
+  tabEl.innerHTML = `<span class="host-chip">${h.name}</span><span>${session}</span><span class="x" title="close">✕</span>`;
+  tabEl.onclick = (e) => {
+    if (e.target.classList.contains('x')) { e.stopPropagation(); closeTab(id); return; }
+    activate(id);
+  };
+  tabsEl.appendChild(tabEl);
+
+  const { cols, rows } = term;
+  const ws = new WebSocket(wsUrlFor(h.url, session, cols, rows));
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => setStatus(`connected: ${h.name}:${session}`, 'ok');
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      if (ev.data.startsWith('{')) {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'ready') { setStatus(`ready: ${h.name}:${session} @ ${msg.host} [${msg.mode}]`, 'ok'); return; }
+          if (msg.type === 'exit') { setStatus(`exited: ${h.name}:${session} (${msg.exitCode})`, 'warn'); return; }
+        } catch {}
+      }
+      term.write(ev.data);
+    } else {
+      term.write(new Uint8Array(ev.data));
+    }
+  };
+  ws.onclose = () => setStatus(`disconnected: ${h.name}:${session}`, 'warn');
+  ws.onerror = () => setStatus(`error: ${h.name}:${session}`, 'err');
+
+  term.onData(d => { if (ws.readyState === 1) ws.send(d); });
+  term.onResize(({ cols, rows }) => {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+  });
+
+  state.tabs.set(id, { hostName: h.name, session, term, fit, ws, tabEl, paneEl });
+  activate(id);
+  setTimeout(() => refreshHost(h).then(() => { renderHosts(); renderSessions(); }), 400);
+}
+
+function activate(id) {
+  state.activeTab = id;
+  for (const [tid, t] of state.tabs) {
+    const on = tid === id;
+    t.tabEl.classList.toggle('active', on);
+    t.paneEl.classList.toggle('active', on);
+    if (on) { t.fit.fit(); t.term.focus(); }
+  }
+  renderSessions();
+}
+
+function closeTab(id) {
+  const t = state.tabs.get(id); if (!t) return;
+  try { t.ws.close(); } catch {}
+  try { t.term.dispose(); } catch {}
+  t.tabEl.remove(); t.paneEl.remove();
+  state.tabs.delete(id);
+  if (state.activeTab === id) {
+    const next = state.tabs.keys().next().value;
+    state.activeTab = null;
+    if (next) activate(next); else setStatus('no open tabs');
+  }
+  renderSessions();
+}
+
+newBtn.onclick = () => {
+  const h = state.hosts.find(x => x.name === state.activeHost);
+  if (!h) return;
+  const name = nameInput.value.trim() || `${h.info?.host || h.name}-${Math.random().toString(36).slice(2, 5)}`;
+  nameInput.value = '';
+  openSession(h, name);
+};
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') newBtn.click(); });
+
+window.addEventListener('resize', () => {
+  const t = state.tabs.get(state.activeTab); if (t) t.fit.fit();
+});
+
+(async () => {
+  await loadHosts();
+  setInterval(async () => {
+    await Promise.all(state.hosts.map(refreshHost));
+    renderHosts(); renderSessions();
+  }, 3000);
+})();
+</script>
+</body>
+</html>
