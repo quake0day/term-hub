@@ -404,7 +404,7 @@ function createTab(s) {
   const entry = {
     session: s.name, host: s.host, term, fit,
     tabEl, paneEl, ws: null, closed: false,
-    retryMs: 0, retryTimer: null,
+    retryMs: 0, retryTimer: null, refitTimer: null,
   };
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const wsUrl = `${proto}://${location.host}/ws/subscribe?session=${encodeURIComponent(s.name)}`;
@@ -414,8 +414,26 @@ function createTab(s) {
   // Home / End / F-keys end in A-H, P-S, or ~ — never c / n / R.
   const REPORT_RE = /\x1b\[(\?[\d;]*c|>[\d;]*c|=[\d;]*c|[\d;]*[Rn])/g;
 
+  // Resize xterm to the session's native geometry BEFORE history is replayed,
+  // then fit back to the pane once the burst has settled. Without this, history
+  // recorded at (e.g.) 242×94 is rendered on an 80×24 / pane-sized terminal and
+  // escape sequences with absolute positions wrap into scrollback garbage. The
+  // deferred fit triggers a fresh resize → the agent reflows cleanly.
+  function adoptSessionGeom(cols, rows) {
+    if (!cols || !rows) return;
+    try { term.resize(cols, rows); } catch {}
+    clearTimeout(entry.refitTimer);
+    entry.refitTimer = setTimeout(() => {
+      if (entry.closed) return;
+      try { fit.fit(); } catch {}
+    }, 250);
+  }
+
   function connect() {
     if (entry.closed) return;
+    // Fresh attach replays full history — clear the screen so we don't stack
+    // the previous state on top of it (matters on reconnect).
+    try { term.reset(); } catch {}
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     entry.ws = ws;
@@ -429,10 +447,10 @@ function createTab(s) {
         if (ev.data.startsWith('{')) {
           try {
             const msg = JSON.parse(ev.data);
-            if (msg.type === 'attached')       { setStatus(`attached: ${msg.host}:${msg.session}`, 'ok'); return; }
+            if (msg.type === 'attached')       { adoptSessionGeom(msg.cols, msg.rows); setStatus(`attached: ${msg.host}:${msg.session}`, 'ok'); return; }
             if (msg.type === 'exit')           { setStatus(`exited: ${s.host}:${s.name} (${msg.exitCode})`, 'warn'); return; }
             if (msg.type === 'publisher-gone') { setStatus(`publisher gone: ${s.host}:${s.name} — waiting for agent to return…`, 'warn'); return; }
-            if (msg.type === 'resize')         { return; }
+            if (msg.type === 'resize')         { adoptSessionGeom(msg.cols, msg.rows); return; }
           } catch {}
         }
         term.write(ev.data);
@@ -485,6 +503,7 @@ function closeTab(id) {
   const t = tabs.get(id); if (!t) return;
   t.closed = true;
   if (t.retryTimer) clearTimeout(t.retryTimer);
+  if (t.refitTimer) clearTimeout(t.refitTimer);
   try { t.ws && t.ws.close(); } catch {}
   try { t.term.dispose(); } catch {}
   t.tabEl.remove(); t.paneEl.remove();

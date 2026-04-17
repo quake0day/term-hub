@@ -46,32 +46,51 @@ function jget(url) {
   });
 }
 
+function tmuxHas(name) {
+  if (!TMUX) return false;
+  try { execSync(`${TMUX} has-session -t ${JSON.stringify(name)} 2>/dev/null`); return true; }
+  catch { return false; }
+}
+
+async function hubTakenSet() {
+  try {
+    const list = await jget(HUB + '/api/sessions');
+    return new Set(list.map(s => s.name));
+  } catch { return new Set(); }
+}
+
+// Pick a session name that is free on BOTH local tmux and the hub. Checking
+// just tmux misses zombie/stale hub sessions left behind by crashed agents,
+// which is the main source of "session name in use" errors at startup.
 async function pickSessionName() {
   const explicit = process.argv[3] || process.env.TERM_HUB_SESSION;
   if (explicit) return explicit;
-  // First preference: local tmux — pick next free session there so
-  // orphaned local tmux sessions get reused on next open.
-  if (TMUX) {
-    let n = 1;
-    while (true) {
-      try { execSync(`${TMUX} has-session -t ${JSON.stringify(`${PREFIX}-${n}`)} 2>/dev/null`); n++; }
-      catch { return `${PREFIX}-${n}`; }
-    }
+  const taken = await hubTakenSet();
+  let n = 1;
+  while (true) {
+    const name = `${PREFIX}-${n}`;
+    if (!tmuxHas(name) && !taken.has(name)) return name;
+    n++;
   }
-  // Else: ask hub (best-effort; if hub down, just timestamp)
-  try {
-    const list = await jget(HUB + '/api/sessions');
-    const taken = new Set(list.map(s => s.name));
-    let n = 1;
-    while (taken.has(`${PREFIX}-${n}`)) n++;
-    return `${PREFIX}-${n}`;
-  } catch {
-    return `${PREFIX}-${Date.now().toString(36).slice(-4)}`;
+}
+
+// Called when the hub rejects our registration with 4002 (another session
+// already owns this name — typically a race between two agents on the same
+// host, or a rapid agent restart while the old WS hasn't been reaped yet).
+// Bumps to the next free name on both sides and renames the live tmux session
+// so the local and hub names stay in sync.
+async function pickFreshNameAfterConflict(current) {
+  const taken = await hubTakenSet();
+  let n = 1;
+  while (true) {
+    const name = `${PREFIX}-${n}`;
+    if (name !== current && !taken.has(name) && (!TMUX || !tmuxHas(name))) return name;
+    n++;
   }
 }
 
 async function main() {
-  const session = await pickSessionName();
+  let session = await pickSessionName();
   const cols = process.stdout.columns || 120;
   const rows = process.stdout.rows || 32;
 
@@ -150,15 +169,15 @@ async function main() {
   });
 
   // 6) Hub connection with retry loop.
-  const wsUrl = HUB.replace(/^http/, 'ws') +
+  const buildWsUrl = () => HUB.replace(/^http/, 'ws') +
     `/ws/publish?session=${encodeURIComponent(session)}&host=${encodeURIComponent(PREFIX)}` +
     `&cols=${process.stdout.columns || cols}&rows=${process.stdout.rows || rows}`;
 
   function connect() {
-    ws = new WebSocket(wsUrl);
+    ws = new WebSocket(buildWsUrl());
     ws.binaryType = 'arraybuffer';
     ws.on('open', () => {
-      process.stderr.write(`\x1b[2m[term-hub] connected\x1b[0m\r\n`);
+      process.stderr.write(`\x1b[2m[term-hub] connected as ${session}\x1b[0m\r\n`);
       // Flush buffered output so viewers see recent state.
       for (const b of preBuf) { try { ws.send(b); } catch {} }
       preBuf.length = 0; preBytes = 0;
@@ -176,9 +195,20 @@ async function main() {
       }
       try { term.write(str); } catch {}
     });
-    ws.on('close', (code) => {
+    ws.on('close', async (code) => {
       if (code === 4002) {
-        process.stderr.write(`\x1b[31m[term-hub] session name '${session}' already in use on hub\x1b[0m\r\n`);
+        const oldName = session;
+        try {
+          session = await pickFreshNameAfterConflict(oldName);
+          if (TMUX) {
+            try { execSync(`${TMUX} rename-session -t ${JSON.stringify(oldName)} ${JSON.stringify(session)}`); } catch {}
+          }
+          process.stderr.write(`\x1b[33m[term-hub] '${oldName}' already in use on hub — renamed to '${session}'\x1b[0m\r\n`);
+        } catch (e) {
+          process.stderr.write(`\x1b[31m[term-hub] session name '${oldName}' in use and rename failed: ${e.message}\x1b[0m\r\n`);
+        }
+        setTimeout(connect, 200);
+        return;
       }
       setTimeout(connect, 3000);
     });
