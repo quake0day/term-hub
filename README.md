@@ -40,6 +40,10 @@ and a Windows desktop. Now the broker is a common workbench for all of them.
 - **Real bidirectional.** Type in the browser, it shows up on the machine. Type
   on the machine, it shows up in the browser. tmux handles local persistence,
   the agent handles the network.
+- **Mobile dashboard.** The same URL works on a phone: one full-screen
+  terminal at a time, slide-in session drawer, sticky on-screen toolbar
+  with the keys mobile keyboards hide — Esc, Tab, Ctrl (as a modifier),
+  arrow keys, Paste. Safe-area aware, iOS keyboard aware, no rubber-band.
 - **Offline-safe, fully reconnecting.** Agent auto-reconnects to the broker
   every 3s with a 256KB pre-connect output buffer flushed on reconnect;
   browser tabs reconnect with exponential backoff; broker heartbeats every 30s

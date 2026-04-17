@@ -2,24 +2,47 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b0d10" />
 <title>term-hub</title>
 <link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css" />
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --surface: #111418;
+    --border: #1d2128;
+    --fg: #d6d7d9;
+    --muted: #5b6473;
+    --accent: #2f81f7;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+  }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #0b0d10; color: #d6d7d9; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
-  #app { display: grid; grid-template-rows: 40px 1fr; height: 100vh; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+  body { padding-left: var(--sal); padding-right: var(--sar); }
+  #app { display: grid; grid-template-rows: calc(40px + var(--sat)) 1fr; height: 100dvh; height: 100vh; }
 
   /* header */
-  header { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: #0b0d10; border-bottom: 1px solid #1d2128; }
-  header .brand { display: flex; align-items: center; gap: 10px; color: #d6d7d9; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; letter-spacing: .14em; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: var(--sat) 14px 0; background: var(--bg); border-bottom: 1px solid var(--border); gap: 10px; }
+  header .brand { display: flex; align-items: center; gap: 10px; color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; letter-spacing: .14em; min-width: 0; flex: 1; }
   header .brand b { color: #fff; letter-spacing: 0; font-weight: 700; font-size: 13px; }
-  header .meta { color: #5b6473; font-size: 11px; font-family: ui-monospace, monospace; display: flex; gap: 14px; }
-  header .meta .ok { color: #3fb950; } header .meta .warn { color: #d29922; }
+  header .brand #hubInfo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .meta { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; display: flex; gap: 14px; flex-shrink: 0; }
+  header .meta .ok { color: var(--ok); } header .meta .warn { color: var(--warn); } header .meta .err { color: var(--err); }
+  #hamburger { display: none; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); font-size: 20px; border-radius: 8px; cursor: pointer; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; touch-action: manipulation; position: relative; }
+  #hamburger:active { background: var(--surface); }
+  #hamburger .badge { position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; line-height: 1; }
 
-  #body { display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
-  aside { background: #111418; border-right: 1px solid #1d2128; display: flex; flex-direction: column; min-height: 0; }
+  #body { display: grid; grid-template-columns: 260px 1fr; min-height: 0; position: relative; }
+  aside { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
   .aside-h { padding: 10px 14px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #5b6473; border-bottom: 1px solid #1d2128; display: flex; justify-content: space-between; align-items: center; }
   #sessions { flex: 1; overflow: auto; padding: 4px 8px 8px; }
   .group { margin-top: 6px; }
@@ -47,13 +70,81 @@
   .pane .xterm { height: 100%; }
   #status { padding: 4px 10px; font-size: 11px; color: #5b6473; background: #0b0d10; border-top: 1px solid #1d2128; font-family: ui-monospace, monospace; }
   #status .ok { color: #3fb950; } #status .warn { color: #d29922; } #status .err { color: #f85149; }
-  #welcome { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #5b6473; font-size: 13px; text-align: center; padding: 0 40px; gap: 8px; }
-  #welcome code { color: #8892a0; background: #111418; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  #welcome { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 0 40px; gap: 8px; }
+  #welcome code { color: #8892a0; background: var(--surface); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  #welcome button { margin-top: 16px; padding: 12px 24px; background: var(--accent); color: #fff; border: 0; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: none; }
+
+  /* backdrop for mobile drawer */
+  #backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 40; opacity: 0; transition: opacity .22s ease; }
+  #backdrop.open { opacity: 1; }
+
+  /* mobile quick-keys bar */
+  #quickbar { display: none; gap: 6px; padding: 8px 8px calc(8px + var(--sab)); background: var(--surface); border-top: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  #quickbar::-webkit-scrollbar { display: none; }
+  #quickbar button { flex-shrink: 0; min-width: 48px; height: 40px; padding: 0 12px; background: #0b0d10; border: 1px solid var(--border); border-radius: 10px; color: var(--fg); font-family: ui-monospace, monospace; font-size: 13px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
+  #quickbar button:active { background: var(--border); transform: scale(0.96); }
+  #quickbar button.armed { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 0 0 3px rgba(47,129,247,0.25); }
+  #quickbar button.wide { min-width: 64px; }
+
+  /* MOBILE layout — single-column, drawer, quickbar */
+  @media (max-width: 768px) {
+    html, body { font-size: 13px; }
+    #app { grid-template-rows: calc(44px + var(--sat)) 1fr auto; }
+    header { padding: 0 8px 0 4px; gap: 6px; padding-top: var(--sat); }
+    header .brand { font-size: 11px; letter-spacing: .04em; gap: 8px; white-space: nowrap; }
+    header .brand b { font-size: 13px; white-space: nowrap; }
+    header .meta { font-size: 10px; gap: 8px; }
+    header .meta #counter { display: none; } /* redundant with hamburger badge */
+    #hamburger { display: inline-flex; }
+
+    #body { grid-template-columns: 1fr; }
+    aside {
+      position: fixed; top: 0; left: 0; bottom: 0;
+      width: min(84vw, 320px);
+      max-width: 320px;
+      padding-top: var(--sat); padding-bottom: var(--sab);
+      padding-left: var(--sal);
+      z-index: 50;
+      transform: translateX(-100%);
+      transition: transform .26s cubic-bezier(.32,.72,.24,1);
+      box-shadow: 2px 0 24px rgba(0,0,0,0.45);
+      border-right: 1px solid var(--border);
+    }
+    aside.open { transform: translateX(0); }
+    #backdrop { display: block; pointer-events: none; }
+    #backdrop.open { pointer-events: auto; }
+
+    /* tabs strip hidden on mobile — one session at a time, switch via drawer */
+    #tabs { display: none !important; }
+
+    .pane { padding: 4px 4px 0; }
+    .sess { padding: 12px 12px; font-size: 13px; min-height: 44px; }
+    .sess .kill { opacity: 1; padding: 8px; font-size: 16px; }
+
+    #status { padding: 4px 10px; font-size: 10px; }
+
+    #welcome { padding: 24px; font-size: 14px; gap: 12px; }
+    #welcome button { display: inline-block; }
+
+    #quickbar { display: flex; }
+
+    /* make xterm selection a touch nicer on mobile */
+    .xterm .xterm-selection-layer * { opacity: .4; }
+  }
+
+  /* very small phones */
+  @media (max-width: 380px) {
+    #quickbar button { min-width: 42px; padding: 0 8px; font-size: 12px; }
+    #quickbar button.wide { min-width: 56px; }
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
+    <button id="hamburger" aria-label="sessions" title="sessions">
+      ☰<span class="badge" id="hbBadge" style="display:none">0</span>
+    </button>
     <div class="brand"><b>term-hub</b> <span id="hubInfo">—</span></div>
     <div class="meta">
       <span id="counter">0 sessions</span>
@@ -61,7 +152,7 @@
     </div>
   </header>
   <div id="body">
-    <aside>
+    <aside id="sidebar">
       <div class="aside-h"><span>sessions</span><span id="liveAgents" class="chip-style"></span></div>
       <div id="sessions"></div>
     </aside>
@@ -72,12 +163,24 @@
           <div>No session opened yet.</div>
           <div>Run an agent on any machine to publish a terminal here:</div>
           <div><code>node agent.js http://<span id="selfHost">hub</span>:<span id="selfPort">7777</span></code></div>
+          <button id="welcomeOpen">Open Sessions</button>
         </div>
       </div>
       <div id="status">loading…</div>
     </main>
   </div>
+  <div id="quickbar" role="toolbar" aria-label="quick keys">
+    <button data-key="esc" class="wide">Esc</button>
+    <button data-key="tab" class="wide">Tab</button>
+    <button data-key="ctrl" class="wide" id="qkCtrl">Ctrl</button>
+    <button data-key="up">↑</button>
+    <button data-key="down">↓</button>
+    <button data-key="left">←</button>
+    <button data-key="right">→</button>
+    <button data-key="paste" class="wide">Paste</button>
+  </div>
 </div>
+<div id="backdrop"></div>
 
 <script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
 <script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
@@ -92,13 +195,60 @@ const tabsEl = document.getElementById('tabs');
 const panesEl = document.getElementById('panes');
 const statusEl = document.getElementById('status');
 const welcome = document.getElementById('welcome');
+const sidebarEl = document.getElementById('sidebar');
+const backdropEl = document.getElementById('backdrop');
+const hamburgerEl = document.getElementById('hamburger');
+const hbBadge = document.getElementById('hbBadge');
+const quickbarEl = document.getElementById('quickbar');
+const qkCtrlEl = document.getElementById('qkCtrl');
+const welcomeOpenBtn = document.getElementById('welcomeOpen');
 
 document.getElementById('selfHost').textContent = location.hostname || 'hub';
 document.getElementById('selfPort').textContent = location.port || '7777';
 
+const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
+function openDrawer()  { sidebarEl.classList.add('open'); backdropEl.classList.add('open'); }
+function closeDrawer() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('open'); }
+hamburgerEl.addEventListener('click', () => {
+  sidebarEl.classList.contains('open') ? closeDrawer() : openDrawer();
+});
+backdropEl.addEventListener('click', closeDrawer);
+welcomeOpenBtn.addEventListener('click', openDrawer);
+
+// swipe-to-close: drag the drawer left to dismiss
+(function enableSwipeClose() {
+  let startX = 0, startY = 0, dragging = false;
+  sidebarEl.addEventListener('touchstart', e => {
+    if (!isMobile() || !sidebarEl.classList.contains('open')) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY; dragging = true;
+  }, { passive: true });
+  sidebarEl.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0) sidebarEl.style.transform = `translateX(${Math.max(dx, -320)}px)`;
+  }, { passive: true });
+  sidebarEl.addEventListener('touchend', e => {
+    if (!dragging) return;
+    dragging = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    sidebarEl.style.transform = '';
+    if (dx < -80) closeDrawer();
+  });
+})();
+
 const tabs = new Map(); // id -> { session, host, term, fit, ws, tabEl, paneEl }
 let activeTab = null;
 let sessionList = [];
+
+// iOS keyboard: refit xterm when visual viewport changes size
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    const t = tabs.get(activeTab); if (t) setTimeout(() => t.fit.fit(), 50);
+  });
+}
 
 const setStatus = (t, c = '') => { statusEl.innerHTML = c ? `<span class="${c}">●</span> ${t}` : t; };
 
@@ -351,10 +501,93 @@ window.addEventListener('resize', () => {
   const t = tabs.get(activeTab); if (t) t.fit.fit();
 });
 
+// ---------- Quick-keys toolbar (mobile) ----------
+// Mobile keyboards hide Esc, Tab, Ctrl, arrow keys. The toolbar sends the
+// corresponding bytes directly over the active session's WebSocket.
+let ctrlArmed = false;
+function sendToActive(data) {
+  const t = tabs.get(activeTab);
+  if (!t || !t.ws || t.ws.readyState !== 1) return false;
+  t.ws.send(data);
+  return true;
+}
+function flashCtrl(off) {
+  qkCtrlEl.classList.toggle('armed', !!off);
+}
+quickbarEl.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-key]'); if (!btn) return;
+  const key = btn.dataset.key;
+  switch (key) {
+    case 'esc':   sendToActive('\x1b'); break;
+    case 'tab':   sendToActive('\t'); break;
+    case 'up':    sendToActive('\x1b[A'); break;
+    case 'down':  sendToActive('\x1b[B'); break;
+    case 'left':  sendToActive('\x1b[D'); break;
+    case 'right': sendToActive('\x1b[C'); break;
+    case 'ctrl':  ctrlArmed = !ctrlArmed; flashCtrl(ctrlArmed); return; /* don't refocus */
+    case 'paste': {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) sendToActive(text);
+      } catch {
+        setStatus('clipboard blocked — long-press terminal and paste', 'warn');
+      }
+      break;
+    }
+  }
+  // Return focus to terminal so real keyboard keeps working
+  const t = tabs.get(activeTab); if (t) t.term.focus();
+});
+
+// Intercept the NEXT character when Ctrl is armed. We hook in at createTab's
+// onData; to avoid refactoring, we patch onData via a shared transformer.
+// We do that by wrapping term.onData from within createTab if needed —
+// simpler: override here by listening to keydown on document and injecting.
+document.addEventListener('keydown', (e) => {
+  if (!ctrlArmed) return;
+  // If the user presses a regular letter key, translate to Ctrl-<letter>
+  if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+    e.preventDefault();
+    const code = e.key.toLowerCase().charCodeAt(0) - 96; // a=1 .. z=26
+    sendToActive(String.fromCharCode(code));
+    ctrlArmed = false; flashCtrl(false);
+  }
+});
+
+// ---------- Mobile UX polish: auto-close drawer on session open ----------
+// Wrap openSession to also close the drawer on mobile.
+const _origOpenSession = openSession;
+openSession = function(s) {
+  _origOpenSession(s);
+  if (isMobile()) closeDrawer();
+};
+
+// Update header + hamburger badge on every refresh.
+function updateHeaderFromTabs() {
+  const openCount = tabs.size;
+  hbBadge.textContent = openCount;
+  hbBadge.style.display = openCount > 0 ? '' : 'none';
+  // On mobile, also fold the current session's name into the brand line.
+  const t = tabs.get(activeTab);
+  if (isMobile() && t) {
+    hubInfoEl.textContent = `${t.host} · ${t.session}`;
+  }
+}
+const _origActivate = activate;
+activate = function(id) { _origActivate(id); updateHeaderFromTabs(); };
+const _origCloseTab = closeTab;
+closeTab = function(id) { _origCloseTab(id); updateHeaderFromTabs(); };
+
+// Prevent iOS rubber-band scroll bouncing the terminal area.
+document.body.addEventListener('touchmove', (e) => {
+  if (e.target.closest('#quickbar, #sessions, .xterm-viewport, .xterm-screen')) return;
+  e.preventDefault();
+}, { passive: false });
+
 (async () => {
   await loadInfo();
   await refreshSessions();
-  setInterval(async () => { await loadInfo(); await refreshSessions(); }, 2500);
+  setInterval(async () => { await loadInfo(); await refreshSessions(); updateHeaderFromTabs(); }, 2500);
 })();
 </script>
 </body>
