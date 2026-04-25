@@ -65,9 +65,14 @@
   .tab .x { color: #5b6473; padding: 0 2px; }
   .tab .x:hover { color: #ff6b6b; }
   #panes { flex: 1; position: relative; background: #000; }
-  .pane { position: absolute; inset: 0; padding: 6px; display: none; }
+  /* Each pane is a scale-to-fit "stage". The publisher's PTY size is the
+     authoritative geometry; the .frame inside renders xterm at its natural
+     pixel size and JS applies a CSS transform: scale() so it fills the pane
+     without changing cols/rows. This lets multiple viewers at different
+     physical sizes share one PTY without resizing it. */
+  .pane { position: absolute; inset: 6px; display: none; overflow: hidden; }
   .pane.active { display: block; }
-  .pane .xterm { height: 100%; }
+  .pane .frame { position: absolute; left: 0; top: 0; transform-origin: top left; will-change: transform; }
   #status { padding: 4px 10px; font-size: 11px; color: #5b6473; background: #0b0d10; border-top: 1px solid #1d2128; font-family: ui-monospace, monospace; }
   #status .ok { color: #3fb950; } #status .warn { color: #d29922; } #status .err { color: #f85149; }
   #welcome { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 0 40px; gap: 8px; }
@@ -117,7 +122,7 @@
     /* tabs strip hidden on mobile — one session at a time, switch via drawer */
     #tabs { display: none !important; }
 
-    .pane { padding: 4px 4px 0; }
+    .pane { inset: 4px 4px 0; }
     .sess { padding: 12px 12px; font-size: 13px; min-height: 44px; }
     .sess .kill { opacity: 1; padding: 8px; font-size: 16px; }
 
@@ -183,7 +188,6 @@
 <div id="backdrop"></div>
 
 <script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
-<script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 <script src="https://unpkg.com/xterm-addon-canvas@0.5.0/lib/xterm-addon-canvas.js"></script>
 <script src="https://unpkg.com/xterm-addon-webgl@0.16.0/lib/xterm-addon-webgl.js"></script>
 <script>
@@ -239,14 +243,47 @@ welcomeOpenBtn.addEventListener('click', openDrawer);
   });
 })();
 
-const tabs = new Map(); // id -> { session, host, term, fit, ws, tabEl, paneEl }
+const tabs = new Map(); // id -> { session, host, term, ws, tabEl, paneEl, frameEl, ... }
 let activeTab = null;
 let sessionList = [];
 
-// iOS keyboard: refit xterm when visual viewport changes size
+// Recompute the CSS transform on a tab's frame so the publisher's PTY
+// (rendered at its natural pixel size inside .frame) fills the pane while
+// preserving aspect ratio. Cols/rows are NOT changed here — only display
+// scale. Coalesced via rAF since we may be called many times in a burst
+// (window drag, mobile keyboard, term.onResize after geom adoption).
+function fitToPane(entry) {
+  if (!entry || entry.closed) return;
+  const { paneEl, frameEl } = entry;
+  if (!paneEl || !frameEl) return;
+  const xtermEl = frameEl.querySelector('.xterm');
+  if (!xtermEl) return;
+  // Reset transform so we measure the natural (unscaled) pixel size.
+  frameEl.style.transform = '';
+  const natW = xtermEl.offsetWidth;
+  const natH = xtermEl.offsetHeight;
+  const W = paneEl.clientWidth;
+  const H = paneEl.clientHeight;
+  if (!natW || !natH || !W || !H) return;
+  const scale = Math.min(W / natW, H / natH);
+  const offX = (W - natW * scale) / 2;
+  const offY = (H - natH * scale) / 2;
+  frameEl.style.transform = `translate(${offX.toFixed(2)}px, ${offY.toFixed(2)}px) scale(${scale})`;
+}
+function scheduleFit(entry) {
+  if (!entry || entry.closed) return;
+  if (entry._fitRaf) cancelAnimationFrame(entry._fitRaf);
+  entry._fitRaf = requestAnimationFrame(() => {
+    entry._fitRaf = null;
+    fitToPane(entry);
+  });
+}
+
+// iOS keyboard: re-fit on visual viewport changes (the on-screen keyboard
+// shrinks the available height; we just rescale, never resize the PTY).
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', () => {
-    const t = tabs.get(activeTab); if (t) setTimeout(() => t.fit.fit(), 50);
+    const t = tabs.get(activeTab); if (t) scheduleFit(t);
   });
 }
 
@@ -346,13 +383,14 @@ function createTab(s) {
     scrollback: 10000,
     allowProposedApi: true,
   });
-  const fit = new FitAddon.FitAddon();
-  term.loadAddon(fit);
 
   const paneEl = document.createElement('div');
   paneEl.className = 'pane';
+  const frameEl = document.createElement('div');
+  frameEl.className = 'frame';
+  paneEl.appendChild(frameEl);
   panesEl.appendChild(paneEl);
-  term.open(paneEl);
+  term.open(frameEl);
 
   // Suppress xterm.js auto-replies to terminal-capability queries (DA1/DA2/DA3,
   // DSR, XTVERSION). The hub replays session history on attach — if any of it
@@ -388,7 +426,6 @@ function createTab(s) {
       usingRenderer = 'canvas';
     } catch {}
   }
-  fit.fit();
 
   const tabEl = document.createElement('div');
   tabEl.className = 'tab';
@@ -402,9 +439,9 @@ function createTab(s) {
   // Wrap WS in a reconnect loop — the xterm.js instance stays, and the hub
   // replays history on each attach so you pick up where you left off.
   const entry = {
-    session: s.name, host: s.host, term, fit,
-    tabEl, paneEl, ws: null, closed: false,
-    retryMs: 0, retryTimer: null, refitTimer: null,
+    session: s.name, host: s.host, term,
+    tabEl, paneEl, frameEl, ws: null, closed: false,
+    retryMs: 0, retryTimer: null, _fitRaf: null,
   };
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const wsUrl = `${proto}://${location.host}/ws/subscribe?session=${encodeURIComponent(s.name)}`;
@@ -414,19 +451,13 @@ function createTab(s) {
   // Home / End / F-keys end in A-H, P-S, or ~ — never c / n / R.
   const REPORT_RE = /\x1b\[(\?[\d;]*c|>[\d;]*c|=[\d;]*c|[\d;]*[Rn])/g;
 
-  // Resize xterm to the session's native geometry BEFORE history is replayed,
-  // then fit back to the pane once the burst has settled. Without this, history
-  // recorded at (e.g.) 242×94 is rendered on an 80×24 / pane-sized terminal and
-  // escape sequences with absolute positions wrap into scrollback garbage. The
-  // deferred fit triggers a fresh resize → the agent reflows cleanly.
+  // The agent decides cols/rows; we just adopt them and rescale visually.
+  // No re-fit / no upstream resize: the publisher's geometry stays put across
+  // every viewer.
   function adoptSessionGeom(cols, rows) {
     if (!cols || !rows) return;
     try { term.resize(cols, rows); } catch {}
-    clearTimeout(entry.refitTimer);
-    entry.refitTimer = setTimeout(() => {
-      if (entry.closed) return;
-      try { fit.fit(); } catch {}
-    }, 250);
+    scheduleFit(entry);
   }
 
   function connect() {
@@ -477,10 +508,10 @@ function createTab(s) {
     const clean = d.replace(REPORT_RE, '');
     if (clean) ws.send(clean);
   });
-  term.onResize(({ cols, rows }) => {
-    const ws = entry.ws;
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
-  });
+  // xterm fires onResize after term.resize; we just rescale the frame so the
+  // new natural pixel size fills the pane. No upstream resize is sent — the
+  // publisher is the size authority.
+  term.onResize(() => scheduleFit(entry));
 
   tabs.set(id, entry);
   connect();
@@ -494,7 +525,7 @@ function activate(id) {
     const on = tid === id;
     t.tabEl.classList.toggle('active', on);
     t.paneEl.classList.toggle('active', on);
-    if (on) { t.fit.fit(); t.term.focus(); }
+    if (on) { scheduleFit(t); t.term.focus(); }
   }
   renderSessions();
 }
@@ -503,7 +534,7 @@ function closeTab(id) {
   const t = tabs.get(id); if (!t) return;
   t.closed = true;
   if (t.retryTimer) clearTimeout(t.retryTimer);
-  if (t.refitTimer) clearTimeout(t.refitTimer);
+  if (t._fitRaf) cancelAnimationFrame(t._fitRaf);
   try { t.ws && t.ws.close(); } catch {}
   try { t.term.dispose(); } catch {}
   t.tabEl.remove(); t.paneEl.remove();
@@ -517,7 +548,7 @@ function closeTab(id) {
 }
 
 window.addEventListener('resize', () => {
-  const t = tabs.get(activeTab); if (t) t.fit.fit();
+  const t = tabs.get(activeTab); if (t) scheduleFit(t);
 });
 
 // ---------- Quick-keys toolbar (mobile) ----------

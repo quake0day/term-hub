@@ -172,7 +172,17 @@ subWss.on('connection', (ws, req) => {
   ws.on('message', (buf, isBinary) => {
     if (s.publisher.readyState !== 1) return;
     if (isBinary) { s.publisher.send(Buffer.from(buf)); return; }
-    s.publisher.send(buf.toString());
+    // The publishing agent is the size authority. Drop any resize coming
+    // from a viewer so a small browser tab can't shrink the PTY and corrupt
+    // the layout for every other viewer.
+    const str = buf.toString();
+    if (str.startsWith('{')) {
+      try {
+        const msg = JSON.parse(str);
+        if (msg && msg.type === 'resize') return;
+      } catch {}
+    }
+    s.publisher.send(str);
   });
   ws.on('close', () => s.subscribers.delete(ws));
 });

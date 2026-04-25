@@ -24,6 +24,15 @@ const IS_WIN = process.platform === 'win32';
 const SHELL = process.env.SHELL || (IS_WIN ? (process.env.COMSPEC || 'cmd.exe') : '/bin/bash');
 const BUFFER_LIMIT = Number(process.env.TERM_HUB_AGENT_BUFFER) || 256 * 1024;
 
+// The agent owns the PTY size. If TERM_HUB_COLS/TERM_HUB_ROWS are both set,
+// the size is "locked" — neither the local TTY nor any browser viewer can
+// change it. This makes a single PTY render correctly across multiple viewers
+// at different physical sizes (Mac terminal, browser, iPhone) by treating
+// viewer dimensions as a *display* concern, not a session concern.
+const ENV_COLS = Number(process.env.TERM_HUB_COLS) || 0;
+const ENV_ROWS = Number(process.env.TERM_HUB_ROWS) || 0;
+const SIZE_LOCKED = ENV_COLS > 0 && ENV_ROWS > 0;
+
 function hasTmux() {
   if (IS_WIN || process.env.TERM_HUB_NO_TMUX === '1') return null;
   try {
@@ -91,8 +100,8 @@ async function pickFreshNameAfterConflict(current) {
 
 async function main() {
   let session = await pickSessionName();
-  const cols = process.stdout.columns || 120;
-  const rows = process.stdout.rows || 32;
+  const cols = SIZE_LOCKED ? ENV_COLS : (process.stdout.columns || 120);
+  const rows = SIZE_LOCKED ? ENV_ROWS : (process.stdout.rows || 32);
 
   // 1) Spawn local shell PTY. Use tmux (if available) to persist the shell
   //    across agent restarts (closing the Terminal window leaves tmux alive).
@@ -159,19 +168,23 @@ async function main() {
     cleanup(exitCode || 0);
   });
 
-  // 5) Local resize → PTY + hub.
-  process.stdout.on('resize', () => {
-    const c = process.stdout.columns || 120, r = process.stdout.rows || 32;
-    try { term.resize(c, r); } catch {}
-    if (ws && ws.readyState === 1) {
-      try { ws.send(JSON.stringify({ type: 'resize', cols: c, rows: r })); } catch {}
-    }
-  });
+  // 5) Local resize → PTY + hub. Skipped when SIZE_LOCKED so an env-pinned
+  //    canonical size doesn't drift if the local terminal window changes.
+  if (!SIZE_LOCKED) {
+    process.stdout.on('resize', () => {
+      const c = process.stdout.columns || 120, r = process.stdout.rows || 32;
+      try { term.resize(c, r); } catch {}
+      if (ws && ws.readyState === 1) {
+        try { ws.send(JSON.stringify({ type: 'resize', cols: c, rows: r })); } catch {}
+      }
+    });
+  }
 
-  // 6) Hub connection with retry loop.
+  // 6) Hub connection with retry loop. Always advertise the PTY's current
+  //    size (term.cols/rows), which is the authoritative canonical size.
   const buildWsUrl = () => HUB.replace(/^http/, 'ws') +
     `/ws/publish?session=${encodeURIComponent(session)}&host=${encodeURIComponent(PREFIX)}` +
-    `&cols=${process.stdout.columns || cols}&rows=${process.stdout.rows || rows}`;
+    `&cols=${term.cols || cols}&rows=${term.rows || rows}`;
 
   function connect() {
     ws = new WebSocket(buildWsUrl());
@@ -188,7 +201,11 @@ async function main() {
       if (str.startsWith('{')) {
         try {
           const msg = JSON.parse(str);
-          if (msg.type === 'resize') { try { term.resize(msg.cols, msg.rows); } catch {} return; }
+          // Viewers no longer drive PTY size — the agent is the authority.
+          // Ignore any resize messages from the broker (they originate from
+          // browser viewers; honoring them would shrink the PTY to fit the
+          // smallest viewer and corrupt all the others).
+          if (msg.type === 'resize') return;
           if (msg.type === 'kill')   { cleanup(0); return; }
           if (msg.type === 'registered') return;
         } catch {}
