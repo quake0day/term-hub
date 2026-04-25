@@ -188,6 +188,23 @@ setw -g aggressive-resize on
 
 #### Windows — Windows Terminal profile
 
+**One-shot installer.** Requires Node.js LTS + Git for Windows
+(`winget install OpenJS.NodeJS.LTS Git.Git`, then reopen PowerShell):
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/quake0day/term-hub/main/scripts/install-windows.ps1 -OutFile install-windows.ps1
+.\install-windows.ps1                                         # uses http://termhub.local:7777
+.\install-windows.ps1 -BrokerUrl http://192.168.1.10:7777     # or pass an explicit URL
+```
+
+This clones the repo to `%USERPROFILE%\term-hub`, runs `npm install`, and
+drops a Windows Terminal fragment that adds a "Hub Shell" profile — no edits
+to your main `settings.json`. Restart Windows Terminal and pick *Settings →
+Startup → Default profile → Hub Shell* so every new tab registers with the
+hub.
+
+**Manual install.** If you'd rather wire it up yourself:
+
 ```powershell
 winget install OpenJS.NodeJS.LTS
 git clone https://github.com/quake0day/term-hub.git C:\term-hub
