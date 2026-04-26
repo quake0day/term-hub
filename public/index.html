@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#0b0d10" />
@@ -122,7 +122,11 @@
     /* tabs strip hidden on mobile — one session at a time, switch via drawer */
     #tabs { display: none !important; }
 
-    .pane { inset: 4px 4px 0; }
+    /* On mobile we deliberately render xterm at the publisher's natural pixel
+       size (no scale-to-fit) — shrinking a 200×50 PTY into a phone viewport
+       makes text unreadable. The pane scrolls instead and pinch-zoom is on,
+       so the user pans/zooms over a 1:1 view that doesn't disturb the PTY. */
+    .pane { inset: 4px 4px 0; overflow: auto; -webkit-overflow-scrolling: touch; }
     .sess { padding: 12px 12px; font-size: 13px; min-height: 44px; }
     .sess .kill { opacity: 1; padding: 8px; font-size: 16px; }
 
@@ -260,6 +264,9 @@ function fitToPane(entry) {
   if (!xtermEl) return;
   // Reset transform so we measure the natural (unscaled) pixel size.
   frameEl.style.transform = '';
+  // Mobile: render at natural 1:1 and let the pane scroll. Each viewer reads
+  // at a comfortable size while the publisher's PTY geometry is untouched.
+  if (isMobile()) return;
   const natW = xtermEl.offsetWidth;
   const natH = xtermEl.offsetHeight;
   const W = paneEl.clientWidth;
@@ -375,7 +382,8 @@ function createTab(s) {
 
   const term = new Terminal({
     fontFamily: '"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace',
-    fontSize: 13,
+    // Bump font on phones so the 1:1 mobile render is comfortable. Pane scrolls.
+    fontSize: isMobile() ? 15 : 13,
     lineHeight: 1.0,
     letterSpacing: 0,
     cursorBlink: true,
@@ -628,9 +636,11 @@ activate = function(id) { _origActivate(id); updateHeaderFromTabs(); };
 const _origCloseTab = closeTab;
 closeTab = function(id) { _origCloseTab(id); updateHeaderFromTabs(); };
 
-// Prevent iOS rubber-band scroll bouncing the terminal area.
+// Prevent iOS rubber-band scroll bouncing the terminal area, but allow
+// touch-pan inside the .pane so the user can scroll a 1:1-rendered terminal
+// that's wider/taller than the phone viewport.
 document.body.addEventListener('touchmove', (e) => {
-  if (e.target.closest('#quickbar, #sessions, .xterm-viewport, .xterm-screen')) return;
+  if (e.target.closest('#quickbar, #sessions, .xterm-viewport, .xterm-screen, .pane')) return;
   e.preventDefault();
 }, { passive: false });
 
